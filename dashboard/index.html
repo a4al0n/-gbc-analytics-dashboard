@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orders Dashboard — RetailCRM Analytics</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Unbounded:wght@400;600;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+    :root {
+      --bg: #0a0a0f;
+      --surface: #111118;
+      --surface2: #1a1a26;
+      --border: rgba(255, 255, 255, 0.06);
+      --accent: #7c6dfa;
+      --accent2: #fa6d9a;
+      --accent3: #6dfabd;
+      --accent4: #fad66d;
+      --text: #e8e8f0;
+      --muted: #6b6b80;
+      --font: 'Unbounded', sans-serif;
+      --mono: 'JetBrains Mono', monospace;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; }
+    body::before { content: ''; position: fixed; inset: 0; background-image: linear-gradient(rgba(124, 109, 250, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(124, 109, 250, 0.03) 1px, transparent 1px); background-size: 40px 40px; pointer-events: none; }
+
+    .container { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 0 24px 60px; }
+    header { display: flex; align-items: center; justify-content: space-between; padding: 32px 0 40px; border-bottom: 1px solid var(--border); margin-bottom: 40px; }
+    .logo { display: flex; align-items: baseline; gap: 10px; }
+    .logo-mark { width: 36px; height: 36px; background: linear-gradient(135deg, var(--accent), var(--accent2)); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+
+    .header-right { display: flex; align-items: center; gap: 16px; }
+    .sync-status { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 11px; color: var(--muted); background: var(--surface); border: 1px solid var(--border); padding: 8px 14px; border-radius: 8px; }
+    .sync-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent3); animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.8); } }
+
+    .btn-refresh { background: var(--surface2); border: 1px solid var(--border); color: var(--text); font-family: var(--font); font-size: 11px; font-weight: 600; padding: 8px 16px; border-radius: 8px; cursor: pointer; transition: all 0.2s; }
+    .btn-refresh:hover { border-color: var(--accent); color: var(--accent); }
+
+    .config-panel { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 12px; padding: 24px; margin-bottom: 32px; display: none; }
+    .config-panel.show { display: block; }
+
+    .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 32px; }
+    .kpi-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 24px; position: relative; overflow: hidden; }
+    .kpi-value { font-size: 28px; font-weight: 800; margin-bottom: 8px; }
+    .kpi-label { font-size: 10px; font-weight: 600; text-transform: uppercase; color: var(--muted); font-family: var(--mono); }
+
+    .charts-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; margin-bottom: 16px; }
+    .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 24px; }
+    .chart-wrap { position: relative; height: 300px; }
+
+    .table-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; margin-top: 24px; }
+    table { width: 100%; border-collapse: collapse; }
+    th { font-family: var(--mono); font-size: 10px; color: var(--muted); padding: 12px 24px; text-align: left; background: rgba(255,255,255,0.01); }
+    td { padding: 14px 24px; font-size: 12px; border-bottom: 1px solid rgba(255,255,255,0.03); }
+    .status-badge { padding: 4px 10px; border-radius: 20px; font-size: 10px; font-family: var(--mono); }
+    .status-new { background: rgba(124,109,250,0.15); color: var(--accent); }
+    .status-complete { background: rgba(109,250,189,0.1); color: #4ecc9a; }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <header>
+      <div class="logo">
+        <div class="logo-mark">📦</div>
+        <div class="logo-text">Orders Dashboard<div style="font-size:10px; color:var(--muted)">Analytical Suite</div></div>
+      </div>
+      <div class="header-right">
+        <div class="sync-status"><div class="sync-dot"></div><span id="lastSync">Загрузка...</span></div>
+        <button class="btn-refresh" onclick="loadData()">↻ Обновить</button>
+        <button class="btn-refresh" onclick="toggleConfig()">⚙ Настройки</button>
+      </div>
+    </header>
+
+    <div class="config-panel" id="configPanel">
+      <div style="margin-bottom:12px; font-size: 11px; opacity: 0.6">⚙ НАСТРОЙКИ SUPABASE</div>
+      <input type="text" id="cfgUrl" placeholder="URL базы" style="width:100%; background:#000; border:1px solid var(--border); color:#fff; padding:10px; margin-bottom:8px; border-radius: 6px; font-family: var(--mono); font-size: 12px">
+      <input type="password" id="cfgKey" placeholder="Публичный (anon) ключ" style="width:100%; background:#000; border:1px solid var(--border); color:#fff; padding:10px; margin-bottom:12px; border-radius: 6px; font-family: var(--mono); font-size: 12px">
+      <button onclick="saveConfig()" style="background:var(--accent); border:none; color:#fff; padding:10px 20px; border-radius:6px; cursor:pointer; font-family: var(--font); font-size: 11px; font-weight: 600">СОХРАНИТЬ</button>
+    </div>
+
+    <div class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-label">Всего</div><div class="kpi-value" id="kpiTotal">—</div></div>
+      <div class="kpi-card"><div class="kpi-label">Выручка</div><div class="kpi-value" id="kpiRevenue">—</div></div>
+      <div class="kpi-card"><div class="kpi-label">Средний чек</div><div class="kpi-value" id="kpiAvg">—</div></div>
+      <div class="kpi-card"><div class="kpi-label">Выполнено</div><div class="kpi-value" id="kpiConv">—</div></div>
+    </div>
+
+    <div class="charts-grid">
+      <div class="chart-card">
+        <div class="chart-wrap"><canvas id="chartMain"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-wrap"><canvas id="chartStatus"></canvas></div>
+      </div>
+    </div>
+
+    <div class="table-card">
+      <div id="tableBody">
+        <div style="padding:100px; text-align:center"><div class="spinner" style="margin: 0 auto 16px"></div>Загрузка данных...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Конфигурация по умолчанию
+    const DEFAULT_URL = 'https://iyleoysbwqdwuwrreaam.supabase.co';
+    const DEFAULT_KEY = 'sb_publishable_qenEdWww0JR5BnTMaR-Uwg_S1yEfix_';
+
+    let sbClient = null;
+    let charts = {};
+
+    function sanitize(str) {
+      if (!str) return '';
+      return str.trim()
+        .replace(/-URL$/i, '')
+        .replace(/-supabase$/i, '')
+        .replace(/-retailcrm$/i, '')
+        .replace(/-Vercel$/i, '')
+        .replace(/-telegram bot$/i, '');
+    }
+
+    function toggleConfig() { document.getElementById('configPanel').classList.toggle('show'); }
+
+    function saveConfig() {
+      localStorage.setItem('sb_url', sanitize(document.getElementById('cfgUrl').value));
+      localStorage.setItem('sb_key', sanitize(document.getElementById('cfgKey').value));
+      location.reload();
+    }
+
+    // ── DATA LOADING ───────────────────────────────────────────────────────
+    async function loadData() {
+      const url = sanitize(localStorage.getItem('sb_url')) || DEFAULT_URL;
+      const key = sanitize(localStorage.getItem('sb_key')) || DEFAULT_KEY;
+      
+      document.getElementById('lastSync').textContent = 'Обновление...';
+      
+      try {
+        if (!url || !url.startsWith('http')) throw new Error('Некорректный URL');
+        
+        sbClient = supabase.createClient(url, key);
+        const { data, error } = await sbClient.from('orders').select('*').order('created_at', { ascending: false });
+        
+        if (error) throw error;
+        
+        render(data);
+        document.getElementById('lastSync').textContent = 'Синхронизировано';
+      } catch (err) {
+        console.error('Data Load Error:', err);
+        document.getElementById('lastSync').textContent = 'Ошибка загрузки';
+        const errMsg = err.message || 'Проверьте настройки';
+        const errCode = err.code || 'UNKNOWN';
+        document.getElementById('tableBody').innerHTML = `
+          <div style="padding:60px; text-align:center">
+            <div style="color:var(--accent2); margin-bottom:12px; font-weight:600">🛑 ОШИБКА ДОСТУПА</div>
+            <div style="font-size:12px; font-family:var(--mono); color:var(--accent2); margin-bottom:8px">[${errCode}]</div>
+            <div style="font-size:11px; opacity:0.6">${errMsg}</div>
+          </div>`;
+      }
+    }
+
+    // ── RENDERING ──────────────────────────────────────────────────────────
+    function render(orders) {
+      if (!orders || orders.length === 0) {
+        document.getElementById('tableBody').innerHTML = '<div style="padding:60px; text-align:center; opacity:0.5">Данные не найдены</div>';
+        return;
+      }
+
+      // KPI
+      const revenue = orders.reduce((s, o) => s + (Number(o.total_summ) || 0), 0);
+      document.getElementById('kpiTotal').textContent = orders.length;
+      document.getElementById('kpiRevenue').textContent = formatMoney(revenue);
+      document.getElementById('kpiAvg').textContent = formatMoney(orders.length ? Math.round(revenue / orders.length) : 0);
+      document.getElementById('kpiConv').textContent = orders.filter(o => o.status === 'complete').length;
+
+      // Charts
+      renderCharts(orders);
+
+      // Table
+      const rows = orders.slice(0, 50).map(o => `
+        <tr>
+          <td><span style="color:var(--accent); font-family:var(--mono)">#${o.number || o.id}</span></td>
+          <td>${o.customer_first_name || ''} ${o.customer_last_name || ''}</td>
+          <td><strong style="font-family:var(--mono)">${formatMoney(o.total_summ)}</strong></td>
+          <td><span class="status-badge status-${o.status === 'complete' ? 'complete' : 'new'}">${o.status}</span></td>
+          <td style="color:var(--muted); font-size:10px; font-family:var(--mono)">${new Date(o.created_at).toLocaleDateString()}</td>
+        </tr>`).join('');
+      
+      document.getElementById('tableBody').innerHTML = `<table><thead><tr><th>№</th><th>Клиент</th><th>Сумма</th><th>Статус</th><th>Дата</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+
+    function renderCharts(orders) {
+      // Status Distribution
+      const st = {};
+      orders.forEach(o => st[o.status] = (st[o.status] || 0) + 1);
+
+      if (charts.st) charts.st.destroy();
+      charts.st = new Chart(document.getElementById('chartStatus'), {
+        type: 'doughnut',
+        data: {
+          labels: Object.keys(st),
+          datasets: [{ data: Object.values(st), backgroundColor: ['#7c6dfa', '#fa6d9a', '#6dfabd', '#fad66d'], borderWidth: 0 }]
+        },
+        options: { cutout: '75%', plugins: { legend: { position: 'bottom', labels: { color: '#6b6b80', font: { size: 9, family: 'JetBrains Mono' } } } } }
+      });
+
+      // Daily Revenue
+      const daily = {};
+      orders.slice(0, 100).forEach(o => {
+        const d = new Date(o.created_at).toLocaleDateString();
+        daily[d] = (daily[d] || 0) + (Number(o.total_summ) || 0);
+      });
+      const labels = Object.keys(daily).reverse();
+      const vals = labels.map(l => daily[l]);
+
+      if (charts.main) charts.main.destroy();
+      charts.main = new Chart(document.getElementById('chartMain'), {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{ 
+            label: 'Выручка', 
+            data: vals, 
+            borderColor: '#7c6dfa', 
+            tension: 0.4, 
+            fill: true, 
+            backgroundColor: 'rgba(124,109,250,0.05)',
+            borderWidth: 2,
+            pointRadius: 0
+          }]
+        },
+        options: { 
+          scales: { 
+            x: { display: false }, 
+            y: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#444', font: { size: 9 } } } 
+          },
+          plugins: { legend: { display: false } }
+        }
+      });
+    }
+
+    function formatMoney(n) { return Number(n).toLocaleString('ru-KZ') + ' ₸'; }
+
+    // INIT
+    document.getElementById('cfgUrl').value = localStorage.getItem('sb_url') || DEFAULT_URL;
+    document.getElementById('cfgKey').value = localStorage.getItem('sb_key') || DEFAULT_KEY;
+    window.onload = loadData;
+  </script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "name": "orders-dashboard",
+  "builds": [
+    {
+      "src": "dashboard/index.html",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "/dashboard/index.html"
+    }
+  ],
+  "env": {
+    "RETAILCRM_URL":      "https://alikhanserik41.retailcrm.ru",
+    "SUPABASE_URL":       "https://iyleoysbwqdwuwrreaam.supabase.co",
+    "TELEGRAM_CHAT_ID":   "1258004712"
+  }
+}
